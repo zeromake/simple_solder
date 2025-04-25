@@ -2,16 +2,36 @@
 
 #define uchar unsigned char
 #define uint unsigned int
+#define SET_MAX 300
+#define LVD2V0 0x00 //LVD@2.0V
+#define LVD2V4 0x01 //LVD@2.4V
+#define LVD2V7 0x02 //LVD@2.7V
+#define LVD3V0 0x03 //LVD@3.0V
 
 unsigned int DisplayData[3];
-unsigned char set_temp = 20;     // 开机初始化温度
+unsigned int set_temp = 20;     // 开机初始化温度
 unsigned char EC11_Stepping = 5; // 旋转编码器步进
 unsigned int Temp_DigDisplay;
 unsigned int sw_a;
 unsigned char __CODE smgduan[10] = {0xe7, 0x05, 0xe9, 0xad, 0x0f, 0xae, 0xee, 0x85, 0xef, 0xaf};
-unsigned int MAX6675_Temp;
-unsigned char Flag_connect;
 unsigned int t;
+
+INTERRUPT(PowerLost, EXTI_VectLowVoltDect)
+{
+  EA = 0; //关闭所有中断
+  IAP_WriteData(set_temp>>8 & 0x255);//写高8位数据
+  IAP_CmdWrite(0);
+  IAP_WriteData(set_temp & 0x255);//写低8位数据
+  IAP_CmdWrite(1);
+
+  while((PCON & 0x20) != 0) //复查掉电标志
+  {
+    PCON &= 0xDF; //清除掉电标志
+    NOP();               
+    NOP(); //坐等掉电
+  }
+  IAP_CONTR  = 0x20; //发现是误报，重启单片机，恢复正常工作
+}
 
 SBIT(SO, _P3, 4);     // P3.4口与SO相连
 SBIT(SCK, _P3, 0);    // P3.0口与SCK相连
@@ -39,6 +59,21 @@ void setup(void) // 初始化函数
   P3M0 = 0x00;
   P5M1 = 0x00; // P5.4口准双向，P5.5口推挽输出
   P5M0 = 0x20;
+
+  EA = 1; // 开启中断
+  RSTCFG = LVD3V0; //使能 2.4V 时低压中断
+  ELVD = 1; //使能 LVD 中断
+
+  uint16_t num = 0;
+  IAP_CmdRead(0);
+  num = IAP_ReadData(); //读高8位
+  num <<= 8;
+  IAP_CmdRead(1);
+  num |= IAP_ReadData(); //读低8位
+  if (num != 0xffff) {
+    set_temp = num;
+  }
+  IAP_CmdErase(0); // 擦除扇区（扇区首地址0x0000）
 }
 
 void delay(unsigned int i) // 延时函数
@@ -114,13 +149,19 @@ void EC11(void) // 旋转编码器驱动
   {
     if (EC11_A)
     {
-      set_temp = set_temp + EC11_Stepping;
+      set_temp = set_temp + (int)EC11_Stepping;
+      if (set_temp > SET_MAX) {
+        set_temp = 0;
+      }
       Temp_DigDisplay = set_temp;
       t = 0;
     }
     else
     {
-      set_temp = set_temp - EC11_Stepping;
+      set_temp = set_temp - (int)EC11_Stepping;
+      if (set_temp > SET_MAX) {
+        set_temp = SET_MAX;
+      }
       Temp_DigDisplay = set_temp;
       t = 0;
     }
@@ -133,14 +174,14 @@ void EC11(void) // 旋转编码器驱动
   }
 }
 
-float PID(float currentTemperature, float set_temp) // PID控制
+float PID(float currentTemperature, float _set_temp) // PID控制
 {
   float error;
   float derivative;
   float output;
   float proportional;
 
-  error = set_temp - currentTemperature; // 计算误差
+  error = _set_temp - currentTemperature; // 计算误差
 
   proportional = Kp * error; // 计算比例项
 
@@ -179,7 +220,7 @@ void main(void)
       sw_a = 1200;
     }
     else
-      sw_a = PID(Temp_DigDisplay, set_temp);
+      sw_a = PID(Temp_DigDisplay, (float)set_temp);
 
     for (t = 0; t < 1200; t++)
     {
