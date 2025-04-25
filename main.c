@@ -16,14 +16,34 @@ unsigned int Temp_DigDisplay;
 unsigned int sw_a;
 unsigned char __CODE smgduan[10] = {0xe7, 0x05, 0xe9, 0xad, 0x0f, 0xae, 0xee, 0x85, 0xef, 0xaf};
 unsigned int t;
+unsigned int swap1 = 0;
+unsigned int swap2 = 0;
+int count = 0;
 
-INTERRUPT(PowerLost, EXTI_VectLowVoltDect)
-{
-  IAP_WriteData(set_temp>>8 & 0xff);//写高8位数据
+void updateEEPROM(unsigned int data) {
+  // 已经更新过了
+  if (swap2 == data) {
+    return;
+  }
+  if (swap1 == data) {
+    // 温度一直一样，增加计数
+    count++;
+  } else {
+    // 发现温度变化重新计数
+    swap1 = data;
+    count = 1;
+  }
+  // 让 ai 计算了说一次大概为 720 ms，所以大概是 5s
+  if (count < 7) {
+    return;
+  }
+  IAP_CmdErase(EEPROM_ADDR);
+  IAP_WriteData(data>>8 & 0xff);//写高8位数据
   IAP_CmdWrite(EEPROM_ADDR+0);
-  IAP_WriteData(set_temp & 0xff);//写低8位数据
+  IAP_WriteData(data & 0xff);//写低8位数据
   IAP_CmdWrite(EEPROM_ADDR+1);
-  NOP();
+  swap2 = data;
+  count = 0;
 }
 
 SBIT(SO, _P3, 4);     // P3.4口与SO相连
@@ -56,10 +76,6 @@ void setup(void) // 初始化函数
   IAP_SetWaitTime();
   IAP_SetEnabled(HAL_State_ON);
 
-  EA = 1; // 开启中断
-  RSTCFG = LVD3V0; //使能 2.4V 时低压中断
-  ELVD = 1; //使能 LVD 中断
-
   uint16_t num = 0;
   IAP_CmdRead(EEPROM_ADDR+0);
   num = IAP_ReadData(); //读高8位
@@ -69,7 +85,6 @@ void setup(void) // 初始化函数
   if (num != 0xffff) {
     set_temp = num;
   }
-  IAP_CmdErase(EEPROM_ADDR); // 擦除扇区（扇区首地址0x0000）
 }
 
 void delay(unsigned int i) // 延时函数
@@ -228,7 +243,6 @@ void main(void)
       }
     }
     sw = 0;
+    updateEEPROM(set_temp);
   }
-  IAP_SetEnabled(HAL_State_OFF);
-  IAP_SoftReset();
 }
