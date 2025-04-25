@@ -19,9 +19,9 @@ unsigned int t;
 INTERRUPT(PowerLost, EXTI_VectLowVoltDect)
 {
   EA = 0; //关闭所有中断
-  IAP_WriteData(set_temp>>8 & 0x255);//写高8位数据
+  IAP_WriteData(set_temp>>8 & 0xff);//写高8位数据
   IAP_CmdWrite(0);
-  IAP_WriteData(set_temp & 0x255);//写低8位数据
+  IAP_WriteData(set_temp & 0xff);//写低8位数据
   IAP_CmdWrite(1);
 
   while((PCON & 0x20) != 0) //复查掉电标志
