@@ -7,6 +7,7 @@
 #define LVD2V4 0x01 //LVD@2.4V
 #define LVD2V7 0x02 //LVD@2.7V
 #define LVD3V0 0x03 //LVD@3.0V
+#define EEPROM_ADDR 0x0400 //EEPROM地址
 
 unsigned int DisplayData[3];
 unsigned int set_temp = 20;     // 开机初始化温度
@@ -18,19 +19,11 @@ unsigned int t;
 
 INTERRUPT(PowerLost, EXTI_VectLowVoltDect)
 {
-  EA = 0; //关闭所有中断
   IAP_WriteData(set_temp>>8 & 0xff);//写高8位数据
-  IAP_CmdWrite(0);
+  IAP_CmdWrite(EEPROM_ADDR+0);
   IAP_WriteData(set_temp & 0xff);//写低8位数据
-  IAP_CmdWrite(1);
-
-  while((PCON & 0x20) != 0) //复查掉电标志
-  {
-    PCON &= 0xDF; //清除掉电标志
-    NOP();               
-    NOP(); //坐等掉电
-  }
-  IAP_CONTR  = 0x20; //发现是误报，重启单片机，恢复正常工作
+  IAP_CmdWrite(EEPROM_ADDR+1);
+  NOP();
 }
 
 SBIT(SO, _P3, 4);     // P3.4口与SO相连
@@ -60,20 +53,23 @@ void setup(void) // 初始化函数
   P5M1 = 0x00; // P5.4口准双向，P5.5口推挽输出
   P5M0 = 0x20;
 
+  IAP_SetWaitTime();
+  IAP_SetEnabled(HAL_State_ON);
+
   EA = 1; // 开启中断
   RSTCFG = LVD3V0; //使能 2.4V 时低压中断
   ELVD = 1; //使能 LVD 中断
 
   uint16_t num = 0;
-  IAP_CmdRead(0);
+  IAP_CmdRead(EEPROM_ADDR+0);
   num = IAP_ReadData(); //读高8位
   num <<= 8;
-  IAP_CmdRead(1);
+  IAP_CmdRead(EEPROM_ADDR+1);
   num |= IAP_ReadData(); //读低8位
   if (num != 0xffff) {
     set_temp = num;
   }
-  IAP_CmdErase(0); // 擦除扇区（扇区首地址0x0000）
+  IAP_CmdErase(EEPROM_ADDR); // 擦除扇区（扇区首地址0x0000）
 }
 
 void delay(unsigned int i) // 延时函数
@@ -233,4 +229,6 @@ void main(void)
     }
     sw = 0;
   }
+  IAP_SetEnabled(HAL_State_OFF);
+  IAP_SoftReset();
 }
