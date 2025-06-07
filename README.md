@@ -4,12 +4,22 @@
 
 ## 编译方法
 
-自行安装 [sdcc](https://sdcc.sourceforge.net).
+下载 sdcc 并设置到 path
+``` sh
+> xrepo add-repo zeromake https://github.com/zeromake/xrepo.git
+> xrepo install sdcc
+> xrepo info sdcc
+installdir: C:\Users\ljh\AppData\Local\.xmake\packages\s\sdcc\4.5.0\e6aa3c720cd8435ba7f7806fe30454fe
+# 把对应的 installdir/bin 添加到 PATH 里
+# pwsh
+> $env:PATH+=";$installdir\bin"
+# bash
+> export PATH = "$PATH:$installdir/bin"
+```
 
 ```sh
-# 如果是包管理器安装，sdcc可以直接执行，可以不加 --sdk 选项
 # xmake f 会自动下载 fwlib_stc8 依赖并编译
-xmake f -p cross -a mcs51 --toolchain=sdcc --sdk=${SDCC_DIR} -c
+xmake f -p cross -a mcs51 --toolchain=sdcc -c
 xmake b root
 # 编译输出在 build/cross/mcs51/release/boot.bin
 ```
